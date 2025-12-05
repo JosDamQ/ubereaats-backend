@@ -17,8 +17,8 @@ services:
     container_name: ubereats-postgres
     restart: always
     environment:
-      POSTGRES_USER: root
-      POSTGRES_PASSWORD: root
+      POSTGRES_USER: damiangarcia
+      POSTGRES_PASSWORD: 12345
       POSTGRES_DB: ubereats
     ports:
       - "5432:5432"

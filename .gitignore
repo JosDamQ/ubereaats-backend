@@ -234,4 +234,6 @@ $RECYCLE.BIN/
 # Windows shortcuts
 *.lnk
 
+.kiro/*
+
 # End of https://www.toptal.com/developers/gitignore/api/macos,node,linux,windows,git,dbeaver

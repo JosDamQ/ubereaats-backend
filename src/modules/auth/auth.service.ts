@@ -1,11 +1,12 @@
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
+import { OAuth2Client } from 'google-auth-library';
 import prisma from '../../config/database';
 import redisClient from '../../config/redis';
 import { env } from '../../config/env';
 import { ValidationError, ConflictError, AuthenticationError } from '../../utils/errors';
-import type { RegisterDTO, TokenPair, TokenPayload, UserResponse, LoginDTO } from './types';
+import type { RegisterDTO, TokenPair, TokenPayload, UserResponse, LoginDTO, OAuthDTO, GooglePayload } from './types';
 
 class AuthService {
   /**
@@ -179,6 +180,91 @@ class AuthService {
   private isValidEmail(email: string): boolean {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return emailRegex.test(email);
+  }
+
+  /**
+   * Verify Google ID Token
+   */
+  private async verifyGoogleToken(idToken: string): Promise<GooglePayload> {
+    const client = new OAuth2Client(env.GOOGLE_CLIENT_ID);
+
+    try {
+      const ticket = await client.verifyIdToken({
+        idToken,
+        audience: env.GOOGLE_CLIENT_ID,
+      });
+
+      const payload = ticket.getPayload();
+
+      if (!payload || !payload.sub || !payload.email) {
+        throw new AuthenticationError('Invalid Google token payload');
+      }
+
+      return {
+        sub: payload.sub,
+        email: payload.email,
+        email_verified: payload.email_verified || false,
+        name: payload.name,
+        picture: payload.picture,
+      };
+    } catch (error) {
+      throw new AuthenticationError('Failed to verify Google token');
+    }
+  }
+
+  /**
+   * OAuth login for Google
+   */
+  async oauthLogin(data: OAuthDTO): Promise<{ user: UserResponse; tokens: TokenPair }> {
+    const { idToken, provider } = data;
+
+    if (provider !== 'google') {
+      throw new ValidationError('Only Google OAuth is supported in this method');
+    }
+
+    // Validate the ID Token with Google
+    const googlePayload = await this.verifyGoogleToken(idToken);
+
+    // Search for existing user by oauthProvider='google' and oauthId
+    let user = await prisma.user.findFirst({
+      where: {
+        oauthProvider: 'google',
+        oauthId: googlePayload.sub,
+      },
+    });
+
+    // If user doesn't exist, create new user with Google data
+    if (!user) {
+      user = await prisma.user.create({
+        data: {
+          email: googlePayload.email,
+          name: googlePayload.name || null,
+          password: null, // OAuth users don't have password
+          role: 'CLIENT', // Default role
+          oauthProvider: 'google',
+          oauthId: googlePayload.sub, // Store Google user ID
+        },
+      });
+    }
+
+    // Generate Access Token and Refresh Token - Requirement 3.4
+    const tokens = await this.generateTokenPair(user.id, user.role);
+
+    // Return tokens and user data
+    const userResponse: UserResponse = {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      phone: user.phone,
+      role: user.role,
+      oauthProvider: user.oauthProvider,
+      createdAt: user.createdAt,
+    };
+
+    return {
+      user: userResponse,
+      tokens,
+    };
   }
 }
 

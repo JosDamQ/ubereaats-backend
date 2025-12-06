@@ -30,3 +30,16 @@ export interface UserResponse {
   oauthProvider: string | null;
   createdAt: Date;
 }
+
+export interface OAuthDTO {
+  idToken: string;
+  provider: 'google' | 'apple';
+}
+
+export interface GooglePayload {
+  sub: string; // Google user ID
+  email: string;
+  email_verified: boolean;
+  name?: string;
+  picture?: string;
+}

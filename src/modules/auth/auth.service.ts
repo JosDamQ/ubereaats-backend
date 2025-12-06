@@ -12,7 +12,6 @@ import type { RegisterDTO, TokenPair, TokenPayload, UserResponse, LoginDTO, OAut
 class AuthService {
   /**
    * Login with email and password
-   * Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 10.1, 10.2, 10.4
    */
   async login(data: LoginDTO): Promise<{ user: UserResponse; tokens: TokenPair }> {
     const { email, password } = data;

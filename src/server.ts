@@ -1,8 +1,9 @@
 import app from "./app";
 import prisma from "./config/database";
 import redisClient from "./config/redis";
+import { env } from "./config/env";
 
-const PORT = process.env.PORT || 3000;
+const PORT = env.PORT;
 
 // Initialize connections and start server
 async function startServer() {

@@ -357,6 +357,66 @@ class AuthService {
     const key = `refresh:${userId}:${sessionId}`;
     await redisClient.del(key);
   }
+
+  /**
+   * Logout user - revoke tokens
+   * Requirements: 6.1, 6.2, 6.3, 6.4, 6.5
+   */
+  async logout(accessToken: string, refreshToken: string): Promise<void> {
+    // Extract userId and sessionId from Access Token
+    let payload: any;
+    try {
+      payload = jwt.verify(accessToken, env.JWT_SECRET) as any;
+    } catch (error) {
+      // Even if token is expired or invalid, we should still try to clean up
+      // Try to decode without verification to get the payload
+      try {
+        payload = jwt.decode(accessToken) as any;
+      } catch {
+        throw new AuthenticationError('Invalid access token');
+      }
+    }
+
+    const { userId, sessionId, exp } = payload;
+
+    if (!userId || !sessionId) {
+      throw new AuthenticationError('Invalid token payload');
+    }
+
+    // Delete the Refresh Token from Redis - Requirement 6.1
+    await this.deleteRefreshToken(userId, sessionId);
+
+    // Add the Access Token to the blacklist - Requirement 6.2
+    // Calculate TTL as remaining time until expiration - Requirement 6.3
+    if (exp) {
+      const currentTime = Math.floor(Date.now() / 1000);
+      const ttl = exp - currentTime;
+
+      // Only add to blacklist if token hasn't expired yet
+      if (ttl > 0) {
+        await this.addToBlacklist(accessToken, ttl);
+      }
+    }
+
+    // Return confirmation of success - Requirement 6.4
+  }
+
+  /**
+   * Add Access Token to blacklist in Redis
+   */
+  private async addToBlacklist(token: string, ttl: number): Promise<void> {
+    const key = `blacklist:${token}`;
+    await redisClient.setEx(key, ttl, '1');
+  }
+
+  /**
+   * Check if Access Token is blacklisted
+   */
+  async isBlacklisted(token: string): Promise<boolean> {
+    const key = `blacklist:${token}`;
+    const result = await redisClient.get(key);
+    return result !== null;
+  }
 }
 
 export default new AuthService();

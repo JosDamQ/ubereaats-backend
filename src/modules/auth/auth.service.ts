@@ -2,11 +2,12 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
 import { OAuth2Client } from 'google-auth-library';
+import appleSignin from 'apple-signin-auth';
 import prisma from '../../config/database';
 import redisClient from '../../config/redis';
 import { env } from '../../config/env';
 import { ValidationError, ConflictError, AuthenticationError } from '../../utils/errors';
-import type { RegisterDTO, TokenPair, TokenPayload, UserResponse, LoginDTO, OAuthDTO, GooglePayload } from './types';
+import type { RegisterDTO, TokenPair, TokenPayload, UserResponse, LoginDTO, OAuthDTO, GooglePayload, ApplePayload } from './types';
 
 class AuthService {
   /**
@@ -213,41 +214,72 @@ class AuthService {
   }
 
   /**
-   * OAuth login for Google
+   * Verify Apple ID Token
+   */
+  private async verifyAppleToken(idToken: string): Promise<ApplePayload> {
+    try {
+      const applePayload = await appleSignin.verifyIdToken(idToken, {
+        audience: env.APPLE_CLIENT_ID,
+        ignoreExpiration: false,
+      });
+
+      if (!applePayload || !applePayload.sub || !applePayload.email) {
+        throw new AuthenticationError('Invalid Apple token payload');
+      }
+
+      return {
+        sub: applePayload.sub,
+        email: applePayload.email,
+        email_verified: applePayload.email_verified,
+        name: undefined, // Apple doesn't always provide name in token
+      };
+    } catch (error) {
+      throw new AuthenticationError('Failed to verify Apple token');
+    }
+  }
+
+  /**
+   * OAuth login for Google and Apple
    */
   async oauthLogin(data: OAuthDTO): Promise<{ user: UserResponse; tokens: TokenPair }> {
     const { idToken, provider } = data;
 
-    if (provider !== 'google') {
-      throw new ValidationError('Only Google OAuth is supported in this method');
+    let oauthPayload: { sub: string; email: string; name?: string };
+
+    // Validate the ID Token based on provider
+    if (provider === 'google') {
+      // Validate with Google
+      oauthPayload = await this.verifyGoogleToken(idToken);
+    } else if (provider === 'apple') {
+      // Validate with Apple
+      oauthPayload = await this.verifyAppleToken(idToken);
+    } else {
+      throw new ValidationError('Unsupported OAuth provider');
     }
 
-    // Validate the ID Token with Google
-    const googlePayload = await this.verifyGoogleToken(idToken);
-
-    // Search for existing user by oauthProvider='google' and oauthId
+    // Search for existing user by oauthProvider and oauthId
     let user = await prisma.user.findFirst({
       where: {
-        oauthProvider: 'google',
-        oauthId: googlePayload.sub,
+        oauthProvider: provider,
+        oauthId: oauthPayload.sub,
       },
     });
 
-    // If user doesn't exist, create new user with Google data
+    // If user doesn't exist, create new user with OAuth data
     if (!user) {
       user = await prisma.user.create({
         data: {
-          email: googlePayload.email,
-          name: googlePayload.name || null,
+          email: oauthPayload.email,
+          name: oauthPayload.name || null,
           password: null, // OAuth users don't have password
           role: 'CLIENT', // Default role
-          oauthProvider: 'google',
-          oauthId: googlePayload.sub, // Store Google user ID
+          oauthProvider: provider,
+          oauthId: oauthPayload.sub, // Store OAuth user ID
         },
       });
     }
 
-    // Generate Access Token and Refresh Token - Requirement 3.4
+    // Generate Access Token and Refresh Token
     const tokens = await this.generateTokenPair(user.id, user.role);
 
     // Return tokens and user data

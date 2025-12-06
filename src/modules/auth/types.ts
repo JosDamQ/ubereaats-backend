@@ -43,3 +43,10 @@ export interface GooglePayload {
   name?: string;
   picture?: string;
 }
+
+export interface ApplePayload {
+  sub: string; // Apple user ID
+  email: string;
+  email_verified?: boolean | string;
+  name?: string;
+}

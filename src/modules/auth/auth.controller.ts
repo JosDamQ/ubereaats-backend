@@ -34,6 +34,7 @@ export async function register(req: Request, res: Response, next: NextFunction):
                 accessToken: result.tokens.accessToken,
                 refreshToken: result.tokens.refreshToken,
             },
+            message: 'User registered successfully'
         });
     } catch (error) {
         next(error);
@@ -69,6 +70,7 @@ export async function login(req: Request, res: Response, next: NextFunction): Pr
                 accessToken: result.tokens.accessToken,
                 refreshToken: result.tokens.refreshToken,
             },
+            message: 'User logged in successfully'
         });
     } catch (error) {
         next(error);
@@ -104,6 +106,7 @@ export async function oauthGoogle(req: Request, res: Response, next: NextFunctio
                 accessToken: result.tokens.accessToken,
                 refreshToken: result.tokens.refreshToken,
             },
+            message: 'User logged in with Google successfully'
         });
     } catch (error) {
         next(error);
@@ -168,6 +171,7 @@ export async function refresh(req: Request, res: Response, next: NextFunction): 
                 accessToken: tokens.accessToken,
                 refreshToken: tokens.refreshToken,
             },
+            message: 'Token refreshed successfully'
         });
     } catch (error) {
         next(error);
@@ -202,6 +206,7 @@ export async function logout(req: Request, res: Response, next: NextFunction): P
         // Return response in standard format
         res.status(200).json({
             status: 'success',
+            data: null,
             message: 'Logged out successfully',
         });
     } catch (error) {

@@ -298,6 +298,65 @@ class AuthService {
       tokens,
     };
   }
+
+  /**
+   * Refresh access token using refresh token
+   */
+  async refreshToken(refreshToken: string): Promise<TokenPair> {
+    // Verify that the Refresh Token is valid (JWT)
+    let payload: any;
+    try {
+      payload = jwt.verify(refreshToken, env.JWT_SECRET) as any;
+    } catch (error) {
+      throw new AuthenticationError('Invalid or expired refresh token');
+    }
+
+    const { userId, sessionId } = payload;
+
+    if (!userId || !sessionId) {
+      throw new AuthenticationError('Invalid refresh token payload');
+    }
+
+    // Look up the token in Redis
+    const key = `refresh:${userId}:${sessionId}`;
+    const storedToken = await redisClient.get(key);
+
+    // If token doesn't exist in Redis, reject the request
+    if (!storedToken) {
+      throw new AuthenticationError('Refresh token not found or expired');
+    }
+
+    // Verify the stored token matches the provided token
+    if (storedToken !== refreshToken) {
+      throw new AuthenticationError('Invalid refresh token');
+    }
+
+    // Get user to retrieve role for new access token
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new AuthenticationError('User not found');
+    }
+
+    // Delete the old Refresh Token from Redis
+    await this.deleteRefreshToken(userId, sessionId);
+
+    // Generate new Access Token (15 min) and new Refresh Token (30 days)
+    const newTokens = await this.generateTokenPair(user.id, user.role);
+
+    // Return both tokens
+    return newTokens;
+  }
+
+  /**
+   * Delete Refresh Token from Redis
+   */
+  private async deleteRefreshToken(userId: string, sessionId: string): Promise<void> {
+    const key = `refresh:${userId}:${sessionId}`;
+    await redisClient.del(key);
+  }
 }
 
 export default new AuthService();
